@@ -3,256 +3,226 @@ Ext.define('CustomApp', {
     componentCls: 'app',
     logger: new Rally.technicalservices.Logger(),
     items: [
-        {xtype:'container',itemId:'display_box'},
+        {xtype:'container',itemId:'criteria_box', layout: {type: 'hbox'}, padding: 5},
+        {xtype:'container',itemId:'display_box', layout: {type: 'table', columns: 3}},
         {xtype:'tsinfolink'}
     ],
     portfolioItemTypes: [],
-    displayNameMapping: {},
-    stateFieldMapping: {},
+    fields: [],
     launch: function() {
-        this._initializeConfig(); 
-        this._fetchDataInChunks().then({
-            scope: this, 
-            success: function(data){
-               this._buildGrid(data);
-            },
-            failure: function(error){}
+        
+        var label_width= 150;
+        
+        var defaultPortfolioItemField = 'State';
+        this.cbPortfolioItem = this.down('#criteria_box').add({
+            xtype: 'rallyfieldcombobox',
+            model: 'PortfolioItem',
+            itemId: 'cb-portfolioItem',
+            labelWidth: label_width,
+            fieldLabel: 'PortfolioItem State Field',
+            labelAlign: 'right',
+            value: defaultPortfolioItemField,
+            margin: 10
         });
+        var pi_store = this.cbPortfolioItem.getStore();
+        this._filterAllowedValuesFields(pi_store);
+        
+        var defaultUserStoryField = 'ScheduleState';
+        this.cbUserStory = this.down('#criteria_box').add({
+            xtype: 'rallyfieldcombobox',
+            itemId: 'cb-userstory',
+            model: 'UserStory',
+            labelWidth: label_width,
+            fieldLabel: 'User Story State Field',
+            labelAlign: 'right',
+            value: defaultUserStoryField,
+            margin: 10
+        });
+        var store = this.cbUserStory.getStore();
+        this._filterAllowedValuesFields(store);
+        
+        this.down('#criteria_box').add({
+            xtype: 'rallybutton',
+            text: 'Update',
+            scope: this,
+            handler: this._update,
+            margin: 10
+        });
+        
+        this._update(defaultPortfolioItemField, defaultUserStoryField); 
+        
     },
-    _initializeConfig: function(){
-        this.portfolioItemTypes = ['PortfolioItem/Theme','PortfolioItem/Initiative','PortfolioItem/Feature'];
-        
-        Ext.each(this.portfolioItemTypes, function(pi){
-            this.displayNameMapping[pi] = pi.replace('PortfolioItem/','');
-            this.stateFieldMapping[pi] = 'State';
-        },this);
-        
-        this.displayNameMapping['HierarchicalRequirement'] = 'User Story';
-        this.stateFieldMapping['HierarchicalRequirement'] = 'ScheduleState';
-        this.logger.log('_initializeConfig',this.displayNameMapping,this.stateFieldMapping);
-    },
-    _buildGrid: function(data){
-        
-        var grid_store = this._buildGridStore(data);
-        this.down('#display_box').add({
-            xtype: 'rallygrid',
-            itemId: 'grid-stats',
-            columnCfgs: this._getGridColumnConfigs(),
-            store: grid_store,
-            showPagingToolbar: false, 
-            listeners: {
-                scope: this,
-                viewready: this._updateSparklines,
-                afterlayout: function(grid){
-                    console.log('afterlayout');
-                    //grid.doLayout();
+    _filterAllowedValuesFields: function(store,cb, default_field) {
+        store.filter([{
+            filterFn:function(field){
+                var attr_def = field.get('fieldDefinition').attributeDefinition;
+                if (attr_def && (attr_def.SchemaType == 'State' || (attr_def.AllowedValues && attr_def.AllowedValues.length > 0))){
+                    return true;
                 }
+                return false;
+            } 
+        }]);
+    },
+    _update: function(portfolioItemField, userStoryField){
+        
+        var pi_field = portfolioItemField;
+        var hr_field = userStoryField; //'ScheduleState';
+
+        if (this.cbPortfolioItem.getValue()){
+            pi_field = this.cbPortfolioItem.getValue();
+        } 
+        if (this.cbUserStory.getValue()){
+            hr_field = this.cbUserStory.getValue();
+        }
+        this.logger.log('_update', pi_field, hr_field);
+        
+        this._initializeConfig(pi_field, hr_field).then({
+            scope: this,
+            success: function() {
+                this._fetchDataInChunks().then({
+                    scope: this, 
+                    success: function(data){
+                       this._buildCharts(data);
+                    },
+                    failure: function(error){}
+                });
+            },
+            failure: function(){
+                alert('Failed to get configuration information');
+            }
+        }); 
+    },
+    _initializeConfig: function(pi_field, hr_field){
+        var deferred = Ext.create('Deft.Deferred');
+        
+        this._fetchPortfolioItemTypes().then({
+            scope: this,
+            success: function(portfolioItemTypes){
+                this.portfolioItemTypes = portfolioItemTypes;
+                this.fields = []; 
+                Ext.each(this.portfolioItemTypes, function(pi){
+                    var field = {type: pi, displayName: pi.replace('PortfolioItem/',''), stateField: pi_field};
+                    this.fields.push(field);
+                },this);
                 
+                this.fields.push({type: 'HierarchicalRequirement', displayName: 'Parent User Stories', stateField: hr_field, findField: 'Children', findValue: {$ne: null}});
+                this.fields.push({type: 'HierarchicalRequirement', displayName: 'Child User Stories', stateField: hr_field, findField: 'Children', findValue: null});
+                this.logger.log('_initializeConfig',this.displayNameMapping,this.stateFieldMapping);
+                deferred.resolve();
             }
         });
         
+        return deferred;  
     },
-    _updateSparklines: function(grid){
-        this.logger.log('viewready');
-        var divs = Ext.query('.sparkline');
-        var promises = []; 
+    _fetchPortfolioItemTypes: function(){
+        var deferred = Ext.create('Deft.Deferred');
         
-        Ext.each(divs, function(div){
-            console.log(div.id);
-
-            var index = div.id.match(/-row-([0-9]+)$/)[1];
-            var rec = grid.getStore().getAt(index);
-            
-            this._createSparkline(rec, div.id);
-        }, this);
+        Ext.create('Rally.data.wsapi.Store',{
+            model: 'TypeDefinition',
+            fetch: ['TypePath','Ordinal'],
+            autoLoad: true, 
+            filters: [{
+                property: 'TypePath',
+                operator: 'contains',
+                value: 'PortfolioItem/'
+            }],
+            listeners: {
+                scope: this,
+                load: function(store, data, success){
+                    var portfolioItemTypes = new Array(data.length);
+                    Ext.each(data, function(d){
+                        //Use ordinal to make sure the lowest level portfolio item type is the first in the array.  
+                        var idx = Number(d.get('Ordinal'));
+                        portfolioItemTypes[idx] = d.get('TypePath');
+                    }, this);
+                    deferred.resolve(portfolioItemTypes); 
+                }
+            }
+        });
+        return deferred.promise; 
     },
-    _createSparkline: function(rec, id){
+    _createPieChart: function(rec, id){
         
         var series = [];
         var categories = []; 
-
-        //Column
-       //var series: [{data: [1,2,3,4]}];
-       //var categories: ['A','B','C','D']; 
-//        var series_data = [];
-//         var chart_type = 'column';
-//        Ext.Object.each(rec.get('stats'),function(key,val){
-//            series_data.push(val);
-//            categories.push(key);
-//        });
-//        series.push({name: '', data: series_data});
-        
-        //Bar
-        //var series = [{name: 'Z', data: [1]},{name: 'Y', data: [2]}];
-//        var chart_type = 'bar';
-//        Ext.Object.each(rec.get('stats'),function(key,val){
-//            series.push({name: key, data: [val]});
-//        });
-        
-        //Pie
         var chart_type = 'pie';
         var series_data = [];  
-        Ext.Object.each(rec.get('stats'),function(key,val){
+        Ext.Object.each(rec.stats,function(key,val){
             series_data.push([key,val]);
         });
-        series.push({type:'pie', data: series_data});
+        series.push({type:'pie', name: rec.displayName, data: series_data});
         
-        new Rally.ui.chart.Chart({
-            renderTo: id,
-            id: Ext.id(),
+        return {
+            xtype: 'rallychart',
+            width: 250,
+            loadMask: false,
             chartData: {
                series: series,
                categories: categories
             },
             chartConfig: {
                 chart: {
-                    backgroundColor: null,
-                    borderWidth: 0,
+                    plotBackgroundColor: null,
+                    plotBorderWidth: null,
+                    plotShadow: false,
                     type: chart_type,
-                    margin: [2, 0, 2, 0],
-                    width: 400,
-                    height: 60,
-                    style: {
-                        overflow: 'visible'
-                    },
-                    skipClone: true
+                    marginTop: 5
                 },
                 title: {
-                    text: ''
+                    text: Ext.String.format("{0} (Total: {1})", rec.displayName, rec.total),
+                    style: {"fontSize": "12px", "fontWeight":"bold" }
                 },
                 plotOptions: {
-                     pie: {
-                        dataLabels: {
-                            enabled: false
-                        },
-                        showInLegend: true
-                     }
+                      pie: {
+                          allowPointSelect: true,
+                          cursor: 'pointer',
+                          dataLabels: {
+                              enabled: false
+                          },
+                          showInLegend: true
+                      }
                 },
                 legend: {
-                    enabled: false, 
-                    align: 'right',
-                    verticalAlign: 'middle'
+                    symbolHeight: 8,
+                    symbolWidth: 8,
+                    padding: 4,
+                    borderColor: null,
+                    itemStyle: {"fontSize": "9px"}
                 }
-//                    bar: {
-//                        stacking: "normal",
-//                        pointWidth: 10,
-//                        dataLabels: {
-//                            enabled: true,
-//                            align: 'right',
-//                            x: 10,
-//                            y: function(){ console.log(point.x); return -5 * point.x;},
-//                            format: '<span style="color:{series.color}">\u25CF {series.name}</span>: <b>{point.y}</b>',
-//                        }
-//                    }
-//                },
-//                tooltip: {
-//                    backgroundColor: null,
-//                    borderWidth: 0,
-//                    shadow: false,
-//                    useHTML: true,
-//                    hideDelay: 0,
-//                    shared: true,
-//                    padding: 0,
-////                    positioner: function (w, h, point) {
-////                        return { x: point.plotX - w / 2, y: point.plotY};
-////                    },
-////                     formatter: '<span style="color:{series.color}">\u25CF</span> {series.name}: <b>{point.y}</b>'
-//                },
-//                yAxis: [
-//                    {
-//                        title: {
-//                            text: null
-//                        },
-//                        labels: {
-//                            enabled: false 
-//                        },
-//                        endOnTick: false,
-//                        startOnTick: false,
-//                        tickPositions: []
-//                    }
-//                ]
             }
-        });
-    },
-    _getGridColumnConfigs: function(){
-        return [{
-            text: 'Type',
-            dataIndex: 'type',
-            scope: this,
-            renderer: function(v,m,r){
-                return this.displayNameMapping[v];
-            }
-        },{
-            text: 'Total',
-            dataIndex: 'total'
-        },{
-            xtype: 'sparklinecolumn',
-            text: 'Statistics',
-            dataIndex: 'stats',
-            flex: 1,
-            tpl: Ext.String.format('<tpl><div id="{[Ext.id()]}-row-{row}" class="sparkline"></div></tpl>')
-        }];
-    },
-    _buildGridStore: function(data){
-        var store_data = [];  
+        }; //);
         
+    },
+    _buildCharts: function(data){
+       this.down('#display_box').removeAll(); 
         Ext.each(data, function(d){
-            var type = d.type;  
-            var state_field = this.stateFieldMapping[type];
-            var counts = {};
-            var total = 0;
-            Ext.each(d.data, function(rec){
-                var state = rec.get(state_field);
-                if (state.length == 0){
-                    state = "None";
-                }
-                if (counts[state] == undefined){
-                    counts[state] = 0;
-                }
-                counts[state]++;  
-                total++;
-            },this);
-            var custom_rec = {type: type, total: total, stats: counts};
-            store_data.push(custom_rec);
-        },this);
-        this.logger.log('_buildGridStore',store_data);
-        return Ext.create('Rally.data.custom.Store',{
-            data: store_data
-        });
-    },
-    _fetchData: function(){
-        this.logger.log('_fetchData Start');
-        var deferred = Ext.create('Deft.Deferred');
-        Ext.create('Rally.data.lookback.SnapshotStore', {
-            listeners: {
-                scope: this,
-                load: function(store, data, success) {
-                    this.logger.log('_fetchData load',store,data,success);
-                    if (success) {
-                        deferred.resolve();
-                    } else {
-                        deferred.reject('Error loading artifact data');
-                    }
-                }
-            },
-            fetch: ['_TypeHierarchy','FormattedID', 'State', 'ObjectID','ScheduleState'],
-            find: { 
-                "_TypeHierarchy": {"$in": ['PortfolioItem','HierarchicalRequirement']},
-                    "__At": "current"
-            },
-            hydrate: ["State"],
-            autoLoad: true
-        });
-        
-        return deferred; 
+           var type = d.fieldInfo.type;  
+           var state_field = d.fieldInfo.stateField;
+           var counts = {};
+           var total = 0;
+           Ext.each(d.data, function(rec){
+               var state = rec.get(state_field);
+               if (state.length == 0){
+                   state = "None";
+               }
+               if (counts[state] == undefined){
+                   counts[state] = 0;
+               }
+               counts[state]++;  
+               total++;
+           },this);
+           var custom_rec = {type: type, total: total, stats: counts, displayName: d.fieldInfo.displayName};
+           var chart = this._createPieChart(custom_rec);
+           this.down('#display_box').add(chart);
+       },this);  
     },
     _fetchDataInChunks: function(){
         var deferred = Ext.create('Deft.Deferred');
         
         this.logger.log('_fetchDataInChunks Start');
         var promises = [];
-        Ext.each(Object.keys(this.stateFieldMapping), function(key){
-            promises.push(this._fetchData3(key,this.stateFieldMapping[key]));
+        Ext.each(this.fields, function(field){
+            promises.push(this._fetchData(field));
         },this);
         
         Deft.Promise.all(promises).then({
@@ -266,27 +236,32 @@ Ext.define('CustomApp', {
         return deferred; 
     },
 
-    _fetchData3: function(typeHierarchy, summaryField){
+    _fetchData: function(field){
         var deferred = Ext.create('Deft.Deferred');
-        this.logger.log('_fetchData',typeHierarchy,summaryField);
+        this.logger.log('_fetchData',field);
+        var find = { 
+                "_TypeHierarchy": field.type,
+                "__At": "current"
+            };  
+        if (field.findField){
+            find[field.findField] = field.findValue; 
+        }
+        
         Ext.create('Rally.data.lookback.SnapshotStore', {
             listeners: {
                 scope: this,
                 load: function(store, data, success) {
                    // this.logger.log('_fetchData load',store,data,success);
                     if (success) {
-                        deferred.resolve({type: typeHierarchy, data: data});
+                        deferred.resolve({fieldInfo: field, data: data});
                     } else {
                         deferred.reject('Error loading artifact data');
                     }
                 }
             },
-            fetch: [summaryField],
-            find: { 
-                "_TypeHierarchy": typeHierarchy,
-                "__At": "current"
-            },
-            hydrate: [summaryField],
+            fetch: [field.stateField],
+            find: find,
+            hydrate: [field.stateField],
             autoLoad: true
         });
         

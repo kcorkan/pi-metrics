@@ -3,10 +3,10 @@
 <head>
     <title>Artifact Metrics</title>
     <!--  (c) 2013 Rally Software Development Corp.  All Rights Reserved. -->
-    <!--  Build Date: Sat Jan 03 2015 15:36:06 GMT-0700 (MST) -->
+    <!--  Build Date: Tue Jan 06 2015 11:26:40 GMT-0700 (MST) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Sat Jan 03 2015 15:36:06 GMT-0700 (MST)";
+        var APP_BUILD_DATE = "Tue Jan 06 2015 11:26:40 GMT-0700 (MST)";
         var CHECKSUM = [%= checksum %];
     </script>
     
@@ -40,6 +40,10 @@
     margin-top: 25px;
     margin-right: 5px;
     cursor: pointer;
+}
+.sparkline {
+	align: 'left';
+	text-align: 'left'
 }
     </style>
 
