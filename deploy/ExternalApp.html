@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Artifact Metrics</title>
+    <!--  (c) 2014 Rally Software Development Corp.  All Rights Reserved. -->
+    <!--  Build Date: Sat Jan 03 2015 15:36:06 GMT-0700 (MST) -->
+    
+    <script type="text/javascript">
+        var APP_BUILD_DATE = "Sat Jan 03 2015 15:36:06 GMT-0700 (MST)";
+        var CHECKSUM = [%= checksum %];
+    </script>
+    
+    <script type="text/javascript" src="https://rally1.rallydev.com/apps/2.0rc3/sdk-debug.js?apiKey=_PUT_APIKEY_HERE_"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function() {
+             
+/**
+ * A link that pops up a version dialog box
+ */
+
+Ext.define('Rally.technicalservices.InfoLink',{
+    extend: 'Ext.Component',
+    alias: 'widget.tsinfolink',
+    
+    /**
+     * @cfg {String} informationHtml
+     * Additional text to be displayed on the popup dialog (for exmaple,
+     * to add a description of the app's use or functionality)
+     */
+    informationHtml: null,
+    
+    /**
+     * 
+     * cfg {String} title
+     * The title for the dialog box
+     */
+     title: "Build Information",
+    
+    renderTpl: "<div id='{id}-infolinkWrap' class='tsinfolink'>i</div>",
+
+    initComponent: function() {
+        this.callParent(arguments);
+       
+    },
+    
+    onRender: function() {
+        this.callParent(arguments);
+        this.mon(this.el,'click',this.onClick,this);
+    },
+    _generateChecksum: function(string){
+        var chk = 0x12345678,
+            i;
+        string = string.replace(/var CHECKSUM = .*;/,"");
+        string = string.replace(/\s/g,"");  //Remove all whitespace from the string.
+        
+        for (i = 0; i < string.length; i++) {
+            chk += (string.charCodeAt(i) * i);
+        }
+    
+        return chk;
+    },
+    _checkChecksum: function(container) {
+        var me = this;
+        Ext.Ajax.request({
+            url: document.URL,
+            params: {
+                id: 1
+            },
+            success: function (response) {
+                text = response.responseText;
+                if ( CHECKSUM ) {
+                    if ( CHECKSUM !== me._generateChecksum(text) ) {
+                        console.log("Checksums don't match!");
+                        if ( me.dialog ) {
+                            me.dialog.add({xtype:'container',html:'Checksums do not match'});
+                        }
+                    }
+                }
+            }
+        });
+    },
+    onClick: function(e) {
+        var me = this;
+        this._checkChecksum(this);
+        
+        var dialog_items = [];
+        
+        if ( this.informationHtml ) {
+            dialog_items.push({
+                xtype:'container',
+                html: this.informationHtml
+            });
+        }
+                
+        dialog_items.push({
+            xtype:'container',
+            html:"This app was created by the Rally Technical Services Team."
+        });
+        
+        if ( APP_BUILD_DATE ) {
+            dialog_items.push({
+                xtype:'container',
+                html:'Build date/time: ' + APP_BUILD_DATE
+            });
+        }
+        
+        if (this.dialog){this.dialog.destroy();}
+        this.dialog = Ext.create('Rally.ui.dialog.Dialog',{
+            defaults: { padding: 5, margin: 5 },
+            closable: true,
+            draggable: true,
+            title: me.title,
+            items: dialog_items
+        });
+        this.dialog.show();
+    }
+});
+
+/*
+ */
+Ext.define('Rally.technicalservices.Logger',{
+    constructor: function(config){
+        Ext.apply(this,config);
+    },
+    log: function(args){
+        var timestamp = "[ " + Ext.util.Format.date(new Date(), "Y-m-d H:i:s.u") + " ]";
+        //var output_args = arguments;
+        //output_args.unshift( [ "[ " + timestamp + " ]" ] );
+        //output_args = Ext.Array.push(output_args,arguments);
+        
+        var output_args = [];
+        output_args = Ext.Array.push(output_args,[timestamp]);
+        output_args = Ext.Array.push(output_args, Ext.Array.slice(arguments,0));
+
+        window.console && console.log.apply(console,output_args);
+    }
+
+});
+
+Ext.define('Rally.technicalservices.SparklineTemplate', {
+    requires: [],
+    extend: 'Ext.XTemplate',
+
+    config: {
+        /**
+         * @cfg {String} width define a width if necessary to fit where it's being used
+         */
+        width: '100%',
+        /**
+         * @cfg {String} height define a height if necessary to fit where it's being used
+         */
+        height: '20px',
+    },
+
+    constructor: function(config) {
+        this.initConfig(config);
+        config = this.config;
+        var templateConfig = [
+            '<tpl>',
+                '<div class="progress-bar-container field-{[this.getSparkline(values)]} {[this.getClickableClass()]} {[this.getContainerClass(values)]}" style="{[this.getDimensionStyle()]}">',
+                    '<div>',
+                        '{[this.getSparkline(values)]}',
+                '</div>',
+            '</tpl>',
+            {
+                getSparkline: function(recordData) {
+                    return _.flatten(recordData);
+                },
+            }];
+
+        return this.callParent(templateConfig);
+
+    }
+});
+Ext.define('CustomApp', {
+    extend: 'Rally.app.App',
+    componentCls: 'app',
+    logger: new Rally.technicalservices.Logger(),
+    items: [
+        {xtype:'container',itemId:'display_box'},
+        {xtype:'tsinfolink'}
+    ],
+    portfolioItemTypes: [],
+    displayNameMapping: {},
+    stateFieldMapping: {},
+    launch: function() {
+        this._initializeConfig(); 
+        this._fetchDataInChunks().then({
+            scope: this, 
+            success: function(data){
+               this._buildGrid(data);
+            },
+            failure: function(error){}
+        });
+    },
+    _initializeConfig: function(){
+        this.portfolioItemTypes = ['PortfolioItem/Theme','PortfolioItem/Initiative','PortfolioItem/Feature'];
+        
+        Ext.each(this.portfolioItemTypes, function(pi){
+            this.displayNameMapping[pi] = pi.replace('PortfolioItem/','');
+            this.stateFieldMapping[pi] = 'State';
+        },this);
+        
+        this.displayNameMapping['HierarchicalRequirement'] = 'User Story';
+        this.stateFieldMapping['HierarchicalRequirement'] = 'ScheduleState';
+        this.logger.log('_initializeConfig',this.displayNameMapping,this.stateFieldMapping);
+    },
+    _buildGrid: function(data){
+        
+        var grid_store = this._buildGridStore(data);
+        this.down('#display_box').add({
+            xtype: 'rallygrid',
+            columnCfgs: this._getGridColumnConfigs(),
+            store: grid_store
+        });
+        
+    },
+    _getGridColumnConfigs: function(){
+        return [{
+            text: 'Type',
+            dataIndex: 'type',
+            scope: this,
+            renderer: function(v,m,r){
+                return this.displayNameMapping[v];
+            }
+        },{
+            text: 'Total',
+            dataIndex: 'total'
+        },{
+            text: 'Statistics',
+            dataIndex: 'stats',
+            renderer: function(v,m,r){
+                console.log(v,m,r);
+                return Ext.create('Rally.technicalservices.SparklineTemplate',{
+                }).apply(v);
+            }
+        }];
+    },
+    _buildGridStore: function(data){
+        var store_data = [];  
+        
+        Ext.each(data, function(d){
+            var type = d.type;  
+            var state_field = this.stateFieldMapping[type];
+            var counts = {};
+            var total = 0;
+            Ext.each(d.data, function(rec){
+                var state = rec.get(state_field);
+                if (state.length == 0){
+                    state = "None";
+                }
+                if (counts[state] == undefined){
+                    counts[state] = 0;
+                }
+                counts[state]++;  
+                total++;
+            },this);
+            var custom_rec = {type: type, total: total, stats: counts};
+            store_data.push(custom_rec);
+        },this);
+        this.logger.log('_buildGridStore',store_data);
+        return Ext.create('Rally.data.custom.Store',{
+            data: store_data
+        });
+    },
+    _fetchData: function(){
+        this.logger.log('_fetchData Start');
+        var deferred = Ext.create('Deft.Deferred');
+        Ext.create('Rally.data.lookback.SnapshotStore', {
+            listeners: {
+                scope: this,
+                load: function(store, data, success) {
+                    this.logger.log('_fetchData load',store,data,success);
+                    if (success) {
+                        deferred.resolve();
+                    } else {
+                        deferred.reject('Error loading artifact data');
+                    }
+                }
+            },
+            fetch: ['_TypeHierarchy','FormattedID', 'State', 'ObjectID','ScheduleState'],
+            find: { 
+                "_TypeHierarchy": {"$in": ['PortfolioItem','HierarchicalRequirement']},
+                    "__At": "current"
+            },
+            hydrate: ["State"],
+            autoLoad: true
+        });
+        
+        return deferred; 
+    },
+    _fetchDataInChunks: function(){
+        var deferred = Ext.create('Deft.Deferred');
+        
+        this.logger.log('_fetchDataInChunks Start');
+        var promises = [];
+        Ext.each(Object.keys(this.stateFieldMapping), function(key){
+            promises.push(this._fetchData3(key,this.stateFieldMapping[key]));
+        },this);
+        
+        Deft.Promise.all(promises).then({
+            scope: this,
+            success: function(data){
+                this.logger.log('_fetchDataInChunks End',data);
+                deferred.resolve(data);
+            },
+            failure: function(){}
+        });        
+        return deferred; 
+    },
+
+    _fetchData3: function(typeHierarchy, summaryField){
+        var deferred = Ext.create('Deft.Deferred');
+        this.logger.log('_fetchData',typeHierarchy,summaryField);
+        Ext.create('Rally.data.lookback.SnapshotStore', {
+            listeners: {
+                scope: this,
+                load: function(store, data, success) {
+                   // this.logger.log('_fetchData load',store,data,success);
+                    if (success) {
+                        deferred.resolve({type: typeHierarchy, data: data});
+                    } else {
+                        deferred.reject('Error loading artifact data');
+                    }
+                }
+            },
+            fetch: [summaryField],
+            find: { 
+                "_TypeHierarchy": typeHierarchy,
+                "__At": "current"
+            },
+            hydrate: [summaryField],
+            autoLoad: true
+        });
+        
+        return deferred; 
+    }
+});
+            
+               Rally.launchApp('CustomApp', {
+                   name: 'Artifact Metrics'
+               });
+        });
+    </script>
+    
+    <style type="text/css">
+
+.app {
+}
+.tsinfolink {
+    position:absolute;
+    right:0px;
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    text-align: center;
+    color: white;
+    background: #C0C0C0;
+    border-style: solid;
+    border-width: 1px;
+    margin-top: 25px;
+    margin-right: 5px;
+    cursor: pointer;
+}
+    </style>
+
+</head>
+<body></body>
+</html>
