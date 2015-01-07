@@ -159,8 +159,11 @@ Ext.define('CustomApp', {
         var categories = []; 
         var chart_type = 'pie';
         var series_data = [];  
-        Ext.Object.each(rec.stats,function(key,val){
-            series_data.push({name: key, y: val, color: this._getColor(colorIndexes[key])});
+
+        var keys = Object.keys(rec.stats);
+        keys.sort();
+        Ext.each(keys, function(key){
+            series_data.push({name: key, y: rec.stats[key], color: this._getColor(colorIndexes[key])});
         }, this);
         series.push({type:'pie', name: rec.displayName, data: series_data});
         
