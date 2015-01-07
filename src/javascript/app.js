@@ -7,6 +7,10 @@ Ext.define('CustomApp', {
         {xtype:'container',itemId:'display_box', layout: {type: 'table', columns: 3}},
         {xtype:'tsinfolink'}
     ],
+    COLORS: ['#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9', 
+            '#f15c80', '#e4d354', '#8085e8', '#8d4653', '#91e8e1',
+            '#2f7ed8', '#0d233a', '#8bbc21', '#910000', '#1aadce', 
+            '#492970', '#f28f43', '#77a1e5', '#c42525', '#a6c96a'],
     portfolioItemTypes: [],
     fields: [],
     launch: function() {
@@ -134,6 +138,7 @@ Ext.define('CustomApp', {
                         //Use ordinal to make sure the lowest level portfolio item type is the first in the array.  
                         var idx = Number(d.get('Ordinal'));
                         portfolioItemTypes[idx] = d.get('TypePath');
+                        portfolioItemTypes.reverse();
                     }, this);
                     deferred.resolve(portfolioItemTypes); 
                 }
@@ -141,15 +146,22 @@ Ext.define('CustomApp', {
         });
         return deferred.promise; 
     },
-    _createPieChart: function(rec, id){
-        
+    _getColor: function(colorIndex){
+        //If we happen to have more allowed values than states, then we need to wrap the colors....
+        if (colorIndex > this.COLORS.length - 1){
+            colorIndex = colorIndex-this.COLORS.length;  
+        }
+        return this.COLORS[colorIndex];
+    },
+    _createPieChart: function(rec, colorIndexes){
+        this.logger.log('_createPieChart', rec, colorIndexes);
         var series = [];
         var categories = []; 
         var chart_type = 'pie';
         var series_data = [];  
         Ext.Object.each(rec.stats,function(key,val){
-            series_data.push([key,val]);
-        });
+            series_data.push({name: key, y: val, color: this._getColor(colorIndexes[key])});
+        }, this);
         series.push({type:'pie', name: rec.displayName, data: series_data});
         
         return {
@@ -195,6 +207,8 @@ Ext.define('CustomApp', {
     },
     _buildCharts: function(data){
        this.down('#display_box').removeAll(); 
+       var color_indexes = {};  
+       var color_index = 0;
         Ext.each(data, function(d){
            var type = d.fieldInfo.type;  
            var state_field = d.fieldInfo.stateField;
@@ -210,9 +224,12 @@ Ext.define('CustomApp', {
                }
                counts[state]++;  
                total++;
+               if (color_indexes[state] == undefined){
+                   color_indexes[state] = color_index++;
+               }
            },this);
            var custom_rec = {type: type, total: total, stats: counts, displayName: d.fieldInfo.displayName};
-           var chart = this._createPieChart(custom_rec);
+           var chart = this._createPieChart(custom_rec, color_indexes);
            this.down('#display_box').add(chart);
        },this);  
     },
