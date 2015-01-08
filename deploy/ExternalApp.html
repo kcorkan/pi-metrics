@@ -3,10 +3,10 @@
 <head>
     <title>Artifact Metrics</title>
     <!--  (c) 2014 Rally Software Development Corp.  All Rights Reserved. -->
-    <!--  Build Date: Thu Jan 08 2015 09:37:48 GMT-0700 (MST) -->
+    <!--  Build Date: Thu Jan 08 2015 14:58:41 GMT-0700 (MST) -->
     
     <script type="text/javascript">
-        var APP_BUILD_DATE = "Thu Jan 08 2015 09:37:48 GMT-0700 (MST)";
+        var APP_BUILD_DATE = "Thu Jan 08 2015 14:58:41 GMT-0700 (MST)";
         var CHECKSUM = [%= checksum %];
     </script>
     
@@ -421,11 +421,13 @@ Ext.define('CustomApp', {
     },
 
     _fetchData: function(field){
+        var project = this.getContext().getProject().ObjectID;  
         var deferred = Ext.create('Deft.Deferred');
         this.logger.log('_fetchData',field);
         var find = { 
                 "_TypeHierarchy": field.type,
-                "__At": "current"
+                "__At": "current",
+                "_ProjectHierarchy": project
         };  
         
         if (field.findField){

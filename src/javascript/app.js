@@ -269,11 +269,13 @@ Ext.define('CustomApp', {
     },
 
     _fetchData: function(field){
+        var project = this.getContext().getProject().ObjectID;  
         var deferred = Ext.create('Deft.Deferred');
         this.logger.log('_fetchData',field);
         var find = { 
                 "_TypeHierarchy": field.type,
-                "__At": "current"
+                "__At": "current",
+                "_ProjectHierarchy": project
         };  
         
         if (field.findField){
