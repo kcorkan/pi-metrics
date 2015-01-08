@@ -4,7 +4,7 @@ Ext.define('CustomApp', {
     logger: new Rally.technicalservices.Logger(),
     items: [
         {xtype:'container',itemId:'criteria_box', layout: {type: 'hbox'}, padding: 5},
-        {xtype:'container',itemId:'display_box', layout: {type: 'table', columns: 3}},
+        {xtype:'container',itemId:'display_box', layout: {type: 'table', columns: 5}},
         {xtype:'tsinfolink'}
     ],
     COLORS: ['#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9', 
@@ -36,7 +36,7 @@ Ext.define('CustomApp', {
             xtype: 'rallyfieldcombobox',
             itemId: 'cb-userstory',
             model: 'UserStory',
-            labelWidth: label_width,
+            labelWidth: label_width *2,
             fieldLabel: 'User Story State Field',
             labelAlign: 'right',
             value: defaultUserStoryField,
@@ -87,12 +87,18 @@ Ext.define('CustomApp', {
                     scope: this, 
                     success: function(data){
                        this._buildCharts(data);
+                       this.setLoading(false);
                     },
-                    failure: function(error){}
+                    failure: function(error){
+                        alert('Failed to fetch data for the chart [' + error + ']');
+                        this.setLoading(false);
+                        
+                    }
                 });
             },
             failure: function(){
                 alert('Failed to get configuration information');
+                this.setLoading(false);
             }
         }); 
     },
@@ -169,7 +175,7 @@ Ext.define('CustomApp', {
         
         return {
             xtype: 'rallychart',
-            width: 250,
+            width: 200,
             loadMask: false,
             chartData: {
                series: series,
@@ -184,8 +190,12 @@ Ext.define('CustomApp', {
                     marginTop: 5
                 },
                 title: {
-                    text: Ext.String.format("{0} (Total: {1})", rec.displayName, rec.total),
-                    style: {"fontSize": "12px", "fontWeight":"bold" }
+                    text: rec.displayName,
+                    style: {"fontSize": "14px", "fontWeight":"bold" }
+                },
+                subtitle: {
+                    text: Ext.String.format("Total: {0}", rec.total),
+                    style: {"fontSize": "12px" }                    
                 },
                 plotOptions: {
                       pie: {
@@ -237,6 +247,7 @@ Ext.define('CustomApp', {
        },this);  
     },
     _fetchDataInChunks: function(){
+        this.setLoading('Retrieving Data...');
         var deferred = Ext.create('Deft.Deferred');
         
         this.logger.log('_fetchDataInChunks Start');
@@ -250,6 +261,7 @@ Ext.define('CustomApp', {
             success: function(data){
                 this.logger.log('_fetchDataInChunks End',data);
                 deferred.resolve(data);
+                this.setLoading(false);
             },
             failure: function(){}
         });        
@@ -262,7 +274,8 @@ Ext.define('CustomApp', {
         var find = { 
                 "_TypeHierarchy": field.type,
                 "__At": "current"
-            };  
+        };  
+        
         if (field.findField){
             find[field.findField] = field.findValue; 
         }
@@ -273,6 +286,7 @@ Ext.define('CustomApp', {
                 load: function(store, data, success) {
                    // this.logger.log('_fetchData load',store,data,success);
                     if (success) {
+                        this.logger.log('_fetchData', data.length, store, success);
                         deferred.resolve({fieldInfo: field, data: data});
                     } else {
                         deferred.reject('Error loading artifact data');
@@ -281,10 +295,10 @@ Ext.define('CustomApp', {
             },
             fetch: [field.stateField],
             find: find,
+            limit: 'Infinity',
             hydrate: [field.stateField],
             autoLoad: true
         });
-        
         return deferred; 
     }
 });
