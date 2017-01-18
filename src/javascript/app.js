@@ -110,6 +110,7 @@ Ext.define('CustomApp', {
             success: function(portfolioItemTypes){
                 this.portfolioItemTypes = portfolioItemTypes;
                 this.fields = []; 
+
                 Ext.each(this.portfolioItemTypes, function(pi){
                     var field = {type: pi, displayName: pi.replace('PortfolioItem/',''), stateField: pi_field};
                     this.fields.push(field);
@@ -117,16 +118,18 @@ Ext.define('CustomApp', {
                 
                 this.fields.push({type: 'HierarchicalRequirement', displayName: 'Parent User Stories', stateField: hr_field, findField: 'Children', findValue: {$ne: null}});
                 this.fields.push({type: 'HierarchicalRequirement', displayName: 'Child User Stories', stateField: hr_field, findField: 'Children', findValue: null});
+
                 this.logger.log('_initializeConfig',this.displayNameMapping,this.stateFieldMapping);
                 deferred.resolve();
             }
         });
-        
         return deferred;  
     },
     _fetchPortfolioItemTypes: function(){
         var deferred = Ext.create('Deft.Deferred');
-        
+
+        this.logger.log('_fetchPortfolioItemTypes');
+
         Ext.create('Rally.data.wsapi.Store',{
             model: 'TypeDefinition',
             fetch: ['TypePath','Ordinal'],
@@ -141,12 +144,14 @@ Ext.define('CustomApp', {
                 load: function(store, data, success){
                     var portfolioItemTypes = new Array(data.length);
                     Ext.each(data, function(d){
-                        //Use ordinal to make sure the lowest level portfolio item type is the first in the array.  
+                        //Use ordinal to make sure the lowest level portfolio item type is the first in the array.
                         var idx = Number(d.get('Ordinal'));
                         portfolioItemTypes[idx] = d.get('TypePath');
-                        portfolioItemTypes.reverse();
+
                     }, this);
-                    deferred.resolve(portfolioItemTypes); 
+                    portfolioItemTypes.reverse();
+                    this.logger.log('_fetchPortfolioItemTypes', portfolioItemTypes);
+                    deferred.resolve(portfolioItemTypes);
                 }
             }
         });
@@ -252,11 +257,13 @@ Ext.define('CustomApp', {
         
         this.logger.log('_fetchDataInChunks Start');
         var promises = [];
+        var me = this;
         Ext.each(this.fields, function(field){
-            promises.push(this._fetchData(field));
+            var param = field;
+            promises.push(function(){ return me._fetchData(param); });
         },this);
         
-        Deft.Promise.all(promises).then({
+        Deft.Chain.sequence(promises, this).then({
             scope: this,
             success: function(data){
                 this.logger.log('_fetchDataInChunks End',data);
